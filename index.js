@@ -231,7 +231,7 @@ ArcApi.prototype = {
           count[0] + ' (' + count[1] + ') - ' + count[2] + ' - ' + count[3],
           'clear: ' + clearType[0] +  (clearType[0] == clearType[1] ? '' : (' (best: ' + clearType[1] + ')')),
           'result rating: ' + Number(ptt.toFixed(5)),
-          'cleared at: ' + time.split('GMT')[0]
+          'cleared at: ' + time.toString().split('GMT')[0]
         ],
         Number(ptt.toFixed(5))
       ];
