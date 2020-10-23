@@ -66,7 +66,7 @@ let request = new Request();
 
 const ArcApi = function() {};
 ArcApi.prototype = {
-  login : function(id, password) {
+  login: function(id, password) {
     request.setMethod('POST');
     request.setAuth('Basic ' + request.encodeBase64(id + ':' + password));
     let res = request.send('/auth/login');
@@ -80,7 +80,7 @@ ArcApi.prototype = {
       return false;
     }
   },
-  getInfo : function() {
+  getInfo: function() {
     request.setMethod('GET');
     let res = request.send('/user/me');
     if(res.success)
@@ -90,7 +90,7 @@ ArcApi.prototype = {
       return false;
     }
   },
-  addFriend : function(friendCode) {
+  addFriend: function(friendCode) {
     request.setMethod('POST');
     let res = request.send('/friend/me/add', {'friend_code' : friendCode});
     if(res.success)
@@ -100,7 +100,7 @@ ArcApi.prototype = {
       return false;
     }
   },
-  delFriend : function(friendId) {
+  delFriend: function(friendId) {
     request.setMethod('POST');
     let res = request.send('/friend/me/delete', {'friend_id': friendId});
     if(res.success)
@@ -110,7 +110,7 @@ ArcApi.prototype = {
       return false;
     }
   },
-  getPlayData : function(subUrl, userId) {
+  getPlayData: function(subUrl, userId) {
     try {
       let songs = songData.songs;
       let res = [];
@@ -146,7 +146,7 @@ ArcApi.prototype = {
             limit: 10
           });
           let value = Array.from(playData.value)
-          Log.i(this.getStringJSON(value))
+          //Log.i(this.getStringJSON(value))
           /*
           value.map(y => {
             if(userId && y.user_id != userId)
@@ -168,7 +168,7 @@ ArcApi.prototype = {
       return res;
     }
     catch(e) {
-      return e +e.lineNumber// 'error';
+      return 'error';
     }
   },
   getMyPlayData: function() {
@@ -177,16 +177,16 @@ ArcApi.prototype = {
   getFriendPlayData: function(friendId) {
     return this.getPlayData('/score/song/friend', friendId);
   },
-  getStringJSON : function(json) {
+  getStringJSON: function(json) {
     return JSON.stringify(json, null, 4);
   },
-  getBeautify : function(json) {
+  getBeautify: function(json) {
     try {
       let songInfo = songData.songs.find(x => x['id'] == json['song_id']);
     
       // string difficulty
       let difficulty = ['PRS', 'PST', 'FTR', 'BYD'];
-      difficulty = '[' + difficulty[json['difficulty']] + '] ';
+      difficulty = difficulty[json['difficulty']];
       // string title
       let title = songInfo['title_localized']['en'];
       // string artist
@@ -212,15 +212,29 @@ ArcApi.prototype = {
       ];
       // string time
       let time = new Date(Number(json['time_played']));
-    
+      
+      let rating = songInfo['difficulties'][Number(json['difficulty'])];
+      // array [rating, realRating]
+      let level = [
+        rating['rating'].toString().replace('.5', '+'),
+        rating['ratingReal']
+      ];
+      // float ptt
+      let ptt = this.getPTTByScore(level[1], Number(json['score']));
+      
       return [
-        difficulty + title,
-        'artist: ' + artist,
-        'score: ' + score,
-        count[0] + ' (' + count[1] + ') - ' + count[2] + ' - ' + count[3],
-        'clear: ' + clearType[0] +  ' (best: ' + clearType[1] + ')',
-        'cleared at: ' + time
-      ].join('\n');
+        [
+          'title: ' + title,
+          difficulty + ' ' + level[0] + '(' + level[1] + ')',
+          'artist: ' + artist,
+          'score: ' + score,
+          count[0] + ' (' + count[1] + ') - ' + count[2] + ' - ' + count[3],
+          'clear: ' + clearType[0] +  (clearType[0] == clearType[1] ? '' : (' (best: ' + clearType[1] + ')')),
+          'result rating: ' + Number(ptt.toFixed(5)),
+          'cleared at: ' + time.split('GMT')[0]
+        ],
+        Number(ptt.toFixed(5))
+      ];
     }
     catch(e) {
       let data = songData.songs.find(x => x['id'] == json['song_id']);
@@ -228,14 +242,22 @@ ArcApi.prototype = {
       return 'songdata:\n'+data + '\n\njsondata:\n'+this.getStringJSON(json)+'\n\n'+ e + '\nLine: ' + e.lineNumber;
     }
   },
-  getDataByCode : function(code) {
+  getDataByCode: function(code) {
     let add = this.addFriend(code);
     Log.i(this.getStringJSON(add))
     let userId = add['user_id'];
     let res = this.getFriendPlayData(userId);
     let del = this.delFriend(userId);
     Log.i(this.getStringJSON(del))
-    return res.map(x => this.getBeautify(x)).join('\n----------\n');
+    return this.sortByPTT(res.map(x => this.getBeautify(x))).map(x => x[0].join('\n')).join('\n----------\n');
+  },
+  getPTTByScore: function (constant, score) { 
+    if (score >= 10000000) return constant + 2; 
+    else if (score >= 9800000) return constant + 1 + (score - 9800000) / 200000; 
+    else return Math.max(constant + (score - 9500000) / 300000, 0);
+  },
+  sortByPTT: function(list) {
+    return list.sort((a, b) => b[1] - a[1]);
   }
 };
 
@@ -244,8 +266,9 @@ arc.login('id', 'password');
 
 function response(room, msg, sender, isGroupChat, replier, imageDB, packageName) {
   try {
+    replier.reply('loading...');
     let res = arc.getDataByCode(msg);
-    replier.reply(res)
+    replier.reply(res);  
   }
   catch(e) {
     replier.reply(e + '\nLine#' + e.lineNumber);
