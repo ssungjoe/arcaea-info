@@ -135,29 +135,9 @@ ArcApi.prototype = {
       let songs = songData.songs;
       let res = [];
       songs.map(x => {
-        /*
-        request.setMethod('GET');
-        let playData = request.send(subUrl, {
-          song_id: x.id,
-          difficulty: 2,
-          start: 0, 
-          limit: 10
-        });
-        let value = playData.value;
-        Log.i(this.getStringJSON(value))
-        let keys = Object.keys(value);
-        let json = {};
-        for(let i in keys) {
-          if(userId != undefined && value['user_id'] != userId)
-              continue;
-          json[keys[i]] = value[keys[i]];
-          //json = value;
-        }
-        res.push(json);
-        */
-        
         for(let diff = 2; diff <= 3; diff++) {
-        //let diff = 2;
+          if(diff == 3 && x.difficulties[3]['rating'] == -1)
+            continue;
           request.setMethod('GET');
           let playData = request.send(subUrl, {
             song_id: x.id,
@@ -274,6 +254,7 @@ ArcApi.prototype = {
     let del = this.delFriend(delList);
     Log.i(this.getStringJSON(del))
     let sorted = this.sortByPTT(res.map(x => this.getBeautify(x)));
+    sorted.splice(30, sorted.length - 30);
     let playerInfo = this.getPlayerInfo(sorted, add);
     const allSee = '\u200b'.repeat(500 - playerInfo.length) + '\n\n';
     this.processing = false;
@@ -341,7 +322,7 @@ ArcApi.prototype = {
 };
 
 let arc = new ArcApi();
-arc.login('id', 'password');
+arc.login('id', 'pw');
 
 function response(room, msg, sender, isGroupChat, replier, imageDB, packageName) {
   try {
