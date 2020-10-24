@@ -65,7 +65,9 @@ Request.prototype = {
 
 let request = new Request();
 
-const ArcApi = function() {};
+const ArcApi = function() {
+  this.processing = false;
+};
 ArcApi.prototype = {
   login: function(id, password) {
     request.setMethod('POST');
@@ -154,8 +156,8 @@ ArcApi.prototype = {
         res.push(json);
         */
         
-        //for(let diff = 0; diff <= 2; diff++) {
-        let diff = 2;
+        for(let diff = 2; diff <= 3; diff++) {
+        //let diff = 2;
           request.setMethod('GET');
           let playData = request.send(subUrl, {
             song_id: x.id,
@@ -179,8 +181,10 @@ ArcApi.prototype = {
             }
           });
           */
+          if(value.join('') == '')
+            return;
           res.push(value[0]);
-        //}
+        }
         
       });
       return res;
@@ -261,6 +265,7 @@ ArcApi.prototype = {
     }
   },
   getDataByCode: function(code) {
+    this.processing = true;
     let add = this.addFriend(code);
     Log.i(this.getStringJSON(add))
     let userId = add['user_id'];
@@ -271,6 +276,7 @@ ArcApi.prototype = {
     let sorted = this.sortByPTT(res.map(x => this.getBeautify(x)));
     let playerInfo = this.getPlayerInfo(sorted, add);
     const allSee = '\u200b'.repeat(500 - playerInfo.length) + '\n\n';
+    this.processing = false;
     return playerInfo + allSee + sorted.map(x => x[0].join('\n')).join('\n----------\n');
   },
   getPTTByScore: function (constant, score) { 
@@ -339,11 +345,24 @@ arc.login('id', 'password');
 
 function response(room, msg, sender, isGroupChat, replier, imageDB, packageName) {
   try {
-    replier.reply('loading...');
-    let res = arc.getDataByCode(msg);
-    replier.reply(res);  
+    if(msg.indexOf('/info ') == 0) {
+      if(arc.processing) {
+        replier.reply('it\'s already loading');
+        return;
+      }
+      let code = msg.substr(6).replace(/[^0-9]/g, '').trim();
+      if(code.length != 9) {
+        replier.reply('only 9 digits');
+        return;
+      }
+      replier.reply('loading...\nit takes some time');
+      let res = arc.getDataByCode(code);
+      replier.reply(res);  
+    }
   }
   catch(e) {
-    replier.reply(e + '\nLine#' + e.lineNumber);
+    replier.reply('error');
+    arc.processing = false;
+    Log.i(e + '\nLine#' + e.lineNumber);
   }
 }
