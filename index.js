@@ -5,6 +5,7 @@ const Request = function() {
   this.method = 'GET';
   this.version = '12';
   this.appVersion = '3.2.1c';
+  //this.userAgent = 'CFNetwork/758.3.15 Darwin/15.4.0';
   this.userAgent = 'CFNetwork/976 Darwin/18.2.0';
   this.auth = undefined;
   this.deviceId = '11bf5b37-e0b8-42e0-8dcf-dc8c4aefc000';
@@ -27,7 +28,7 @@ Request.prototype = {
       'Accept-Language': 'ko-KR',
       'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
       'Accept-Encoding': 'br, gzip, deflate',
-      'User-Agent': this.userAgent
+      'User-Agent': 'Arc-mobile/' + this.appVersion + ' ' + this.userAgent
     }
     if(this.auth != undefined)
       json['Authorization'] = this.auth;
@@ -100,7 +101,8 @@ ArcApi.prototype = {
       return false;
     }
   },
-  delFriend: function(friendId) {
+  delFriend: function(/*friendId*/list) {
+    /*
     request.setMethod('POST');
     let res = request.send('/friend/me/delete', {'friend_id': friendId});
     if(res.success)
@@ -109,6 +111,22 @@ ArcApi.prototype = {
       Log.i('delFriend\n' + this.getStringJSON(res));
       return false;
     }
+    */
+    let log = '';
+    let result = [];
+    for(let i in list) {
+      request.setMethod('POST');
+      let res = request.send('/friend/me/delete', {'friend_id': list[i]});
+      if(res.success)
+        result.push(res.value);
+      else {
+        let temp = 'delFriend\n' + this.getStringJSON(res);
+        if(i == 0) log += temp;
+        else log += '\n--------\n' + temp;
+      }
+    }
+    Log.i(log);
+    return result;
   },
   getPlayData: function(subUrl, userId) {
     try {
@@ -146,7 +164,7 @@ ArcApi.prototype = {
             limit: 10
           });
           let value = Array.from(playData.value)
-          //Log.i(this.getStringJSON(value))
+          Log.i(this.getStringJSON(value))
           /*
           value.map(y => {
             if(userId && y.user_id != userId)
@@ -229,7 +247,7 @@ ArcApi.prototype = {
           'artist: ' + artist,
           'score: ' + score,
           count[0] + ' (' + count[1] + ') - ' + count[2] + ' - ' + count[3],
-          'clear: ' + clearType[0] +  (clearType[0] == clearType[1] ? '' : (' (best: ' + clearType[1] + ')')),
+          'clear: ' + clearType[0] + (clearType[0] == clearType[1] ? '' : (' (best: ' + clearType[1] + ')')),
           'result rating: ' + Number(ptt.toFixed(5)),
           'cleared at: ' + time.toString().split('GMT')[0]
         ],
@@ -247,9 +265,13 @@ ArcApi.prototype = {
     Log.i(this.getStringJSON(add))
     let userId = add['user_id'];
     let res = this.getFriendPlayData(userId);
-    let del = this.delFriend(userId);
+    let delList = this.getDelListByAdd(add);
+    let del = this.delFriend(delList);
     Log.i(this.getStringJSON(del))
-    return this.sortByPTT(res.map(x => this.getBeautify(x))).map(x => x[0].join('\n')).join('\n----------\n');
+    let sorted = this.sortByPTT(res.map(x => this.getBeautify(x)));
+    let playerInfo = this.getPlayerInfo(sorted, add);
+    const allSee = '\u200b'.repeat(500 - playerInfo.length) + '\n\n';
+    return playerInfo + allSee + sorted.map(x => x[0].join('\n')).join('\n----------\n');
   },
   getPTTByScore: function (constant, score) { 
     if (score >= 10000000) return constant + 2; 
@@ -258,6 +280,57 @@ ArcApi.prototype = {
   },
   sortByPTT: function(list) {
     return list.sort((a, b) => b[1] - a[1]);
+  },
+  getPlayerPTT: function(list, playerPTT) {
+    //float best30 sum
+    let best30 = 0;
+    let length = list.length < 30 ? list.length : 30;
+    for(let i = 0; i < length; i++) {
+      best30 += list[i][1];
+    }
+    // float best10 sum
+    let best10 = 0;
+    length = list.length < 10 ? list.length : 10;
+    for(let i = 0; i < length; i++) {
+      best10 += list[i][1];
+    }
+    //float recent10 sum
+    let recent10 = 40 * playerPTT - best30;
+    //float maxPTT
+    let maxPTT = (best30 + best10) / 40;
+    
+    best30 = best30 / 30;
+    recent10 = recent10 / 10;
+    return [best30, recent10, maxPTT];
+  },
+  getDelListByAdd: function(add) {
+    let friends = add['friends'];
+    let arr = [];
+    for(let i in friends) {
+      arr.push(friends[i]['user_id']);
+    }
+    return arr;
+  },
+  getPlayerInfo: function(sorted, add) {
+    let playerInfo = add['friends'][0];
+    // string name
+    let name = playerInfo['name'];
+    // string joinDate
+    let joinDate = new Date(Number(playerInfo['join_date']));
+    joinDate = joinDate.toString().split('GMT')[0];
+
+    // float potential
+    let nowPTT = Number(playerInfo['rating']) / 100;
+    let playerPTT = this.getPlayerPTT(sorted, nowPTT);
+    
+    return [
+      'player name: ' + name,
+      'potential: ' + nowPTT.toFixed(2),
+      'best 30 avg: ' + Number(playerPTT[0].toFixed(5)),
+      'recent top 10 avg: ' + Number(playerPTT[1].toFixed(5)),
+      'max potential: ' + Number(playerPTT[2].toFixed(5)),
+      'registered at: ' + joinDate
+    ].join('\n');
   }
 };
 
