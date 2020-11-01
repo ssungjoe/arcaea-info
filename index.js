@@ -1,11 +1,9 @@
 const songData = JSON.parse(DataBase.getDataBase('ArcaeaSongInfo.txt'));
-
 const Request = function() {
   this.url = 'https://arcapi.lowiro.com/coffee/';
   this.method = 'GET';
   this.version = '12';
-  this.appVersion = '3.2.1c';
-  //this.userAgent = 'CFNetwork/758.3.15 Darwin/15.4.0';
+  this.appVersion = '3.2.2c';
   this.userAgent = 'CFNetwork/976 Darwin/18.2.0';
   this.auth = undefined;
   this.deviceId = '11bf5b37-e0b8-42e0-8dcf-dc8c4aefc000';
@@ -26,6 +24,7 @@ Request.prototype = {
       'AppVersion': this.appVersion,
       'DeviceId': this.deviceId,
       'Accept-Language': 'ko-KR',
+      'Platform': 'android',
       'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
       'Accept-Encoding': 'br, gzip, deflate',
       'User-Agent': 'Arc-mobile/' + this.appVersion + ' ' + this.userAgent
@@ -76,6 +75,7 @@ ArcApi.prototype = {
     if(res.success) {
       Log.i('login success\n' + this.getStringJSON(res));
       request.setAuth('Bearer ' + res.access_token);
+      DataBase.appendDataBase('ArcaeaLogintoken.txt', '\n' + res.access_token);
       return true;
     }
     else {
@@ -103,17 +103,7 @@ ArcApi.prototype = {
       return false;
     }
   },
-  delFriend: function(/*friendId*/list) {
-    /*
-    request.setMethod('POST');
-    let res = request.send('/friend/me/delete', {'friend_id': friendId});
-    if(res.success)
-      return res.value;
-    else {
-      Log.i('delFriend\n' + this.getStringJSON(res));
-      return false;
-    }
-    */
+  delFriend: function(list) {
     let log = '';
     let result = [];
     for(let i in list) {
@@ -134,6 +124,9 @@ ArcApi.prototype = {
     try {
       let songs = songData.songs;
       let res = [];
+      let bool = false;
+      if(!DataBase.getDataBase('ArcaeaSongDetail.txt')) 
+        bool = true;
       songs.map(x => {
         for(let diff = 2; diff <= 3; diff++) {
           if(diff == 3 && x.difficulties[3]['rating'] == -1)
@@ -146,27 +139,17 @@ ArcApi.prototype = {
             limit: 10
           });
           let value = Array.from(playData.value)
-          Log.i(this.getStringJSON(value))
-          /*
-          value.map(y => {
-            if(userId && y.user_id != userId)
-              return;
-            let keys = Object.keys(value);
-            let json = {};
-            for(let i in keys) {
-              if(userId != undefined && value['user_id'] != userId)
-                continue;
-              json[keys[i]] = value[keys[i]];
-              //json = value;
-            }
-          });
-          */
+          //Log.i(this.getStringJSON(value))
+          if(bool) 
+            sv.submitSongData(value);
           if(value.join('') == '')
             return;
           res.push(value[0]);
         }
         
       });
+      if(bool) 
+        sv.saveSongData();
       return res;
     }
     catch(e) {
@@ -181,6 +164,9 @@ ArcApi.prototype = {
   },
   getStringJSON: function(json) {
     return JSON.stringify(json, null, 4);
+  },
+  getStringDate: function(num) {
+    return new java.text.SimpleDateFormat("yyyy-MM-dd, hh:mm:ss").format(num);
   },
   getBeautify: function(json) {
     try {
@@ -213,7 +199,7 @@ ArcApi.prototype = {
         json['miss_count']
       ];
       // string time
-      let time = new Date(Number(json['time_played']));
+      let time = this.getStringDate(Number(json['time_played']));
       
       let rating = songInfo['difficulties'][Number(json['difficulty'])];
       // array [rating, realRating]
@@ -226,14 +212,14 @@ ArcApi.prototype = {
       
       return [
         [
-          'title: ' + title,
+          title,
           difficulty + ' ' + level[0] + '(' + level[1] + ')',
           'artist: ' + artist,
           'score: ' + score,
           count[0] + ' (' + count[1] + ') - ' + count[2] + ' - ' + count[3],
           'clear: ' + clearType[0] + (clearType[0] == clearType[1] ? '' : (' (best: ' + clearType[1] + ')')),
           'result rating: ' + Number(ptt.toFixed(5)),
-          'cleared at: ' + time.toString().split('GMT')[0]
+          'cleared at: ' + time.toString()
         ],
         Number(ptt.toFixed(5))
       ];
@@ -248,17 +234,26 @@ ArcApi.prototype = {
     this.processing = true;
     let add = this.addFriend(code);
     Log.i(this.getStringJSON(add))
+    if(add['success'] == false) {
+      this.processing = false;
+      return 'none';
+    }
     let userId = add['user_id'];
     let res = this.getFriendPlayData(userId);
     let delList = this.getDelListByAdd(add);
     let del = this.delFriend(delList);
     Log.i(this.getStringJSON(del))
     let sorted = this.sortByPTT(res.map(x => this.getBeautify(x)));
-    sorted.splice(30, sorted.length - 30);
+    sorted.map((a, b) => {
+      let s = a;
+      s[0][0] = '#' + (b + 1) + ' ' + s[0][0];
+      return s;
+    });
+    // 최고기록 30개
+    //sorted.splice(30, sorted.length - 30);
     let playerInfo = this.getPlayerInfo(sorted, add);
-    const allSee = '\u200b'.repeat(500 - playerInfo.length) + '\n\n';
     this.processing = false;
-    return playerInfo + allSee + sorted.map(x => x[0].join('\n')).join('\n----------\n');
+    return playerInfo + sorted.map(x => x[0].join('\n')).join('\n----------\n');
   },
   getPTTByScore: function (constant, score) { 
     if (score >= 10000000) return constant + 2; 
@@ -303,26 +298,67 @@ ArcApi.prototype = {
     // string name
     let name = playerInfo['name'];
     // string joinDate
-    let joinDate = new Date(Number(playerInfo['join_date']));
-    joinDate = joinDate.toString().split('GMT')[0];
-
+    let joinDate = this.getStringDate(Number(playerInfo['join_date']));
+    // recent play
+    let play_d = playerInfo['recent_score'];
+    let play = '';
+    if(play_d.length > 0)
+      play = this.getBeautify(play_d[0])[0].join('\n');
+    
     // float potential
     let nowPTT = Number(playerInfo['rating']) / 100;
     let playerPTT = this.getPlayerPTT(sorted, nowPTT);
     
-    return [
+    let res = [
       'player name: ' + name,
-      'potential: ' + nowPTT.toFixed(2),
+      'potential: ' + (nowPTT < 0 ? 'hidden' : nowPTT.toFixed(2)),
       'best 30 avg: ' + Number(playerPTT[0].toFixed(5)),
-      'recent top 10 avg: ' + Number(playerPTT[1].toFixed(5)),
+      'recent top 10 avg: ' + (nowPTT < 0 ? 'immeasurable' : Number(playerPTT[1].toFixed(5))),
       'max potential: ' + Number(playerPTT[2].toFixed(5)),
       'registered at: ' + joinDate
-    ].join('\n');
+    ];
+    const allSee = '\u200b'.repeat(500 - res.join('\n').length) + '\n';
+    if(play != '') {
+      res[5] = res[5] + allSee;
+      res.push('recent play: ' + play);
+    }
+    return res.join('\n') + '\n----------\nBest Plays (sort by rating)\n----------\n';
   }
 };
 
 let arc = new ArcApi();
 arc.login('id', 'pw');
+
+const Save = function() {
+  this.info = [];
+};
+
+Save.prototype = {
+  saveSongData: function() {
+    let i = {'songs': this.info};
+    DataBase.setDataBase('ArcaeaSongDetail.txt', JSON.stringify(i, null, 4));
+    Log.i('saved');
+  },
+  submitSongData: function(info) {
+    info = info[0];
+    let song_d = songData.songs.find(x => x.id == info.song_id);
+    let spe = song_d.difficulties[info.difficulty];
+    if(spe.rating == -1) return;
+    let json = {
+      'difficulty': info.difficulty,
+      'notes': (info.perfect_count + info.near_count + info.miss_count),
+      'title': song_d.title_localized.en,
+      'artist': song_d.artist,
+      'bpm': song_d.bpm,
+      'time': song_d.audioTimeSec,
+      'rating': spe.ratingReal,
+      'chart_designer': spe.chartDesigner,
+      'jacket_designer': spe.jacketDesigner
+    };
+    this.info.push(json);
+  }
+};
+const sv = new Save();
 
 function response(room, msg, sender, isGroupChat, replier, imageDB, packageName) {
   try {
